@@ -272,3 +272,58 @@ describe('enemy preview pen figures (lod idle)', () => {
     assert.ok(steps() <= 12, `idle loop stepped ≈ every 3rd frame (${steps()} of 30)`);
   });
 });
+
+// The death sequence (docs/research/13): a flyer keeps its lift for the whole Die clip and drops only as it fades (the
+// client removes its fly offset in CharacterAnimator.OnFinish), and a long boss Die clip is played out, not trimmed.
+describe('death sequence', () => {
+  /** A view whose manifest entry carries a real Die clip (store()'s stub has Idle only). */
+  function dyingView(die, info = {}, k = 0.7037) {
+    const entry = { skel: '/s/x.skel', atlas: '/s/x.atlas', textures: ['/s/x.png'], anims: { idle: 'Idle', die: 'Die' }, animations: { Idle: 1, Die: die } };
+    const assets = {
+      picture: () => null, image: async () => null, spineEntry: () => entry,
+      spine: { acquire: async () => ({ animations: [{ name: 'Idle' }, { name: 'Die' }] }), release() {} },
+    };
+    const ctx = fakeViewCtx(fake.P, { assets, cam, lookupDef: () => ({ modelScale: k }) });
+    return new UnitView(ctx, { id: 1, side: 'enemy', kind: 'enemy', defId: 'enemy_1112_emppnt', x: 5, y: 12, maxHp: 100, ...info }, {});
+  }
+
+  test('a dying flyer keeps its hover through the Die clip and drops only as it fades', async () => {
+    const { FLY_HOVER } = await import('../../public/js/render/units.js');
+    const v = dyingView(1, { motion: 'FLY' });
+    await tick(); await tick();
+    let t = 0;
+    const step = (n) => { for (let i = 0; i < n; i++) v.update(1 / 60, cam(), (t += 1 / 60)); };
+    step(120);                                              // 2 s alive
+    assert.ok(Math.abs(v.hover - FLY_HOVER) < 1e-3, `alive: ${v.hover}`);
+    v.die();
+    step(60);                                               // the 1 s Die clip plays aloft
+    assert.ok(Math.abs(v.hover - FLY_HOVER) < 1e-3, `still aloft through the clip: ${v.hover}`);
+    assert.equal(v.alive, false);
+    assert.ok(v.dying > 0, 'still dying');
+    step(34);                                               // into the 0.55 s fade tail
+    assert.ok(v.hover < FLY_HOVER * 0.25, `dropping inside the fade: ${v.hover.toFixed(3)}`);
+    step(34);
+    assert.ok(v.hover < 0.05, `on the ground as it goes: ${v.hover.toFixed(3)}`);
+    // a walker never hovers, alive or dying
+    const g = dyingView(1, {});
+    await tick(); await tick();
+    for (let i = 0; i < 60; i++) g.update(1 / 60, cam(), i / 60);
+    g.die();
+    for (let i = 0; i < 60; i++) g.update(1 / 60, cam(), i / 60);
+    assert.equal(g.hover, 0, 'a walker stays on the ground');
+  });
+
+  test('a boss death clip plays to its end: the 7.97 s 盐风主教昆图斯 Die is not cut to the old 1.6 s cap', async () => {
+    const { DIE_CLIP_MAX } = await import('../../public/js/render/units.js');
+    assert.ok(DIE_CLIP_MAX >= 7.97, `the cap covers the longest clip in the data (${DIE_CLIP_MAX})`);
+    const v = dyingView(7.97, {}, 1);
+    await tick(); await tick();
+    let t = 0;
+    for (let i = 0; i < 60; i++) v.update(1 / 60, cam(), (t += 1 / 60));
+    v.die();
+    assert.ok(v.dying > 7.97, `the whole clip is scheduled (${v.dying.toFixed(2)} s)`);
+    for (let i = 0; i < 300; i++) v.update(1 / 60, cam(), (t += 1 / 60));   // 5 s in: the clip still runs
+    assert.equal(v.remove, false, 'still on screen 5 s into a 7.97 s clip');
+    assert.ok(v.dying > 0, 'and still fading later');
+  });
+});

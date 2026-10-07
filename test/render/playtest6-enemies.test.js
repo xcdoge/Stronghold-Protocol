@@ -114,4 +114,23 @@ describe('#13 the self-feared “萨科塔之翼” turns left and right on scre
     assert.equal(flipsRoute, 0, 'flying its route (leftwards) it keeps facing left');
     assert.ok(flipsFear >= 2, `flips while fluttering (${flipsFear})`);
   });
+
+  // The death sequence plays the whole Die clip (docs/research/13): the renderer's cap must sit above every clip in the
+  // data, or a boss is cut off mid-animation — 盐风主教昆图斯's 7.97 s clip played 20 % of itself under the old 1.6 s one.
+  test('no enemy Death clip in the data is longer than the cap the renderer plays', async () => {
+    const { DIE_CLIP_MAX, dieClipDur } = await import('../../public/js/render/units.js');
+    const over = [];
+    let n = 0;
+    let longest = { key: null, d: 0 };
+    for (const [key, a] of Object.entries(A.enemies)) {
+      const d = dieClipDur(a && a.spine);
+      if (!d) continue;
+      n++;
+      if (d > longest.d) longest = { key, d };
+      if (d > DIE_CLIP_MAX) over.push(`${key} ${d}s`);
+    }
+    assert.ok(n > 200, `the sweep sees the death clips (${n})`);
+    assert.deepEqual(over, [], `clips longer than DIE_CLIP_MAX ${DIE_CLIP_MAX}s`);
+    assert.ok(longest.d <= DIE_CLIP_MAX && longest.d > 7, `the longest clip is played whole (${longest.key} ${longest.d}s)`);
+  });
 });

@@ -124,6 +124,20 @@ export const SPINE_STUCK_MS = 5000;
 
 /** Heights above this count as standing on a raised top (bench pads are the lowest raised tiles, 0.16). */
 const RAISED_Z = 0.12;
+/**
+ * Seconds of the death fade that follows the Die clip in `dying` (die(): the clip, then this tail). A flying unit keeps
+ * its lift for the whole clip and drops only inside this tail — the client removes its fly offset in
+ * `CharacterAnimator.OnFinish`, i.e. when the finish state ends, so a dying drone stays aloft until it fades
+ * (docs/research/13 §4).
+ */
+const DIE_FADE_TAIL = 0.55;
+/**
+ * Longest Die clip the death sequence plays out, in seconds. It bounds a view whose data lies rather than trimming
+ * animation: the longest Die clip in the data is 盐风主教昆图斯's 7.97 s (all 234 enemy death clips swept, docs/research/13
+ * §3), so an 8 s cap plays every one of them to its end — the client plays its clip out too (its `OnFinish` fires when
+ * the finish state ends). The old 1.6 s cap cut 25 clips short, the boss ones worst.
+ */
+export const DIE_CLIP_MAX = 8;
 /** Flying units hover this many tiles above the ground they cross. */
 export const FLY_HOVER = 0.32;
 
@@ -809,7 +823,7 @@ export class UnitView {
     if (this.actor && !d) d = this._fallDur();
     const rate = this.ctx.animRate?.() || 1;
     this.dieT = 0;
-    this.dying = clamp(d / rate, 0.35, 1.6) + 0.55;
+    this.dying = clamp(d / rate, 0.35, DIE_CLIP_MAX) + DIE_FADE_TAIL;
     this.dieDur = this.dying;
     if (instant) { this.dieT = 30; if (this.actor) this.actor.update(30); }
   }
@@ -848,7 +862,7 @@ export class UnitView {
     if (!d) {
       if (!this.down) return;
       this.down = null;
-      if (!this.alive) { this.dying = 0.55; this.dieDur = 0.55; }
+      if (!this.alive) { this.dying = DIE_FADE_TAIL; this.dieDur = DIE_FADE_TAIL; }
       return;
     }
     if (this.alive) this.die(instant);
@@ -883,7 +897,9 @@ export class UnitView {
       const d = this.zTarget - this.z;
       this.z = Math.abs(d) < 1e-3 ? this.zTarget : this.z + d * Math.min(1, dt * 12);
     }
-    const hoverTo = this.flying && this.alive ? FLY_HOVER : 0;
+    // a flyer keeps its lift through the Die clip and drops only as it fades out: the client removes the fly offset in
+    // CharacterAnimator.OnFinish, when the finish state ends (docs/research/13 §4); a knocked-down flyer lies on the ground
+    const hoverTo = this.flying && (this.alive || (this.dying > DIE_FADE_TAIL && !this.down)) ? FLY_HOVER : 0;
     if (this.hover !== hoverTo) this.hover = Math.abs(hoverTo - this.hover) < 1e-3 ? hoverTo : this.hover + (hoverTo - this.hover) * Math.min(1, dt * 6);
     const p = cam.project(this.x, this.y, this.z + this.hover + this.lift, this.screen);
     const s = p.s;
@@ -897,7 +913,7 @@ export class UnitView {
     } else if (this.dying > 0) {
       this.dieT += dt;
       this.dying -= dt;
-      const tail = 0.55;
+      const tail = DIE_FADE_TAIL;
       if (this.dying < tail) alpha *= Math.max(0, this.dying / tail);
       if (this.dying <= 0) { this.dying = 0; this.remove = true; alpha = 0; }
     }
