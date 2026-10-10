@@ -713,3 +713,14 @@
 .pauseov__plate h2 { font-size: calc(.5 * var(--t)); font-weight: 900; letter-spacing: .3em; color: #fff; text-shadow: 0 0 .2rem rgba(0, 0, 0, .8); }
 .pauseov__note { font-size: calc(.17 * var(--t)); color: var(--text-md); text-shadow: 0 1px 2px #000; }
 .pauseov__btns { display: flex; gap: .2rem; }
+
+/* 设置 → 干员语音 → 逐个设置：一个窗口里列出本模式所有有语音的干员（行内复用 OperatorVoice 的 .lo-voice） */
+.ov-search { width: 100%; }
+.ov-list { max-height: 3.2rem; overflow-y: auto; margin-top: .06rem; }
+.ov-row { display: flex; align-items: center; justify-content: space-between; gap: .12rem; padding: .02rem 0; }
+.ov-row__name { font-size: calc(.18 * var(--t)); }
+/* 那句"仅保存在此浏览器…"在列表里只出现一次就够了（弹窗顶部），不必每行重复 */
+.ov-row .lo-voice small { display: none; }
+.ov-row .lo-voice > span:first-child { display: none; }
+.ov-row .lo-voice { margin: 0; }
+.ov-modal .set-hint { display: flex; align-items: center; gap: .06rem; flex-wrap: wrap; }

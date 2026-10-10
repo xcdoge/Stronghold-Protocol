@@ -102,7 +102,7 @@ test('settings 语音语言: 中文 by default, 日本語 kept, nothing else; th
   assert.match(ui, /const VOICE_LANG_NAMES = \{ cn: '中文', jp: '日本語' \};/, 'each dub named in its own language');
   for (const code of ['en', 'ja', 'ko', 'zh-TW']) {
     const pack = readJson(`public/i18n/${code}.json`);
-    assert.ok(typeof pack['语音语言'] === 'string' && pack['语音语言'] && pack['语音语言'] !== '语音语言', `${code}: 语音语言`);
+    assert.ok(typeof pack['默认语音语言'] === 'string' && pack['默认语音语言'] && pack['默认语音语言'] !== '语音语言', `${code}: 语音语言`);
   }
 });
 
