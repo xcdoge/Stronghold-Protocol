@@ -99,7 +99,8 @@ const TEXT_SCALES = [['sm', N_('小')], ['md', N_('中')], ['lg', N_('大')], ['
  * 语音语言: each dub named in its own language, like the interface language switch (ui/lang.js) — the owner's
  * 「中文 / 日本語」 (2026-10-08); VOICE_LANGS order.
  */
-const VOICE_LANG_NAMES = { cn: '中文', jp: '日本語' }; // i18n-ignore
+const VOICE_LANG_NAMES = { cn: '中文', jp: '日本語', en: 'English', kr: '한국어' }; // i18n-ignore
+const VOICE_LANG_TAGS = { cn: 'zh', jp: 'ja', en: 'en', kr: 'ko' };                 // i18n-ignore
 /** The rebindable shortcuts' names (msgids), by action. */
 const HOTKEY_NAMES = { refresh: N_('刷新商店'), freeze: N_('冻结 / 解冻商店'), levelUp: N_('升级调度中心'), retreat: N_('撤退选中干员'),
   sell: N_('出售选中干员'), ready: N_('准备就绪 / 暂停（独立模拟）') };
@@ -257,7 +258,7 @@ export function SettingsModal({ open, onClose }) {
         <span class="set-row__label">${t('默认语音语言')}<${MicroLabel}>VOICE LANGUAGE<//></span>
         <div class="set-seg" role="radiogroup" aria-label=${t('默认语音语言')} data-testid="voice-lang">
           ${VOICE_LANGS.map((id) => html`<button key=${id} type="button" role="radio" aria-checked=${s.voiceLang === id ? 'true' : 'false'}
-            lang=${id === 'jp' ? 'ja' : 'zh'} class=${s.voiceLang === id ? 'is-on' : ''} onClick=${() => updateSettings({ voiceLang: id })}>${VOICE_LANG_NAMES[id]}</button>`)}
+            lang=${VOICE_LANG_TAGS[id] || 'zh'} class=${s.voiceLang === id ? 'is-on' : ''} onClick=${() => updateSettings({ voiceLang: id })}>${VOICE_LANG_NAMES[id]}</button>`)}
         </div>
 
         <${OperatorVoiceRow} />

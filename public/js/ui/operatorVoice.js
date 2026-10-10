@@ -5,7 +5,29 @@ import { useSettings, updateSettings } from './settings.js';
 import { t } from '../../../shared/i18n.js';
 import { useState } from '../../vendor/hooks.module.js';
 
-const VOICE_LANG_NAMES = { cn: '中文', jp: '日本語' }; // i18n-ignore
+// Each whole dub is named in its own language, the way the settings row names them (ui/settings.js VOICE_LANG_NAMES).
+const DUB_NAMES = { cn: '中文', jp: '日本語', en: 'English', kr: '한국어' }; // i18n-ignore
+const DUB_TREES = { jp: 'voiceJp', en: 'voiceEn', kr: 'voiceKr' };
+// The special voices, named by the language they are in (the official voiceLangTypeDict names, translated).
+const SPECIAL_LABELS = { cn_topolect: '中文-方言', ita: '意大利语', ger: '德文', rus: '俄文', fre: '法语', spa: '西班牙语', linkage: '联动' }; // i18n-ignore (these keys are the msgids t() looks up)
+
+/**
+ * What this operator can actually be set to: the whole dubs the manifest carries for it (中文 is always there), then its
+ * own special voices (audio.voiceSpecial[charId][type] — only some operators have one). The settings' per-operator
+ * picker and the 逐个设置 window both read this, so neither offers a choice that would play nothing.
+ * @param {string} charId
+ * @returns {{ id: string, label: string }[]}
+ */
+export function voiceOptions(charId, audio = data.get('assets')?.audio) {
+  const out = [];
+  for (const id of ['cn', 'jp', 'en', 'kr']) {
+    if (id === 'cn' || audio?.[DUB_TREES[id]]?.[charId]) out.push({ id, label: DUB_NAMES[id] });
+  }
+  for (const [type, slots] of Object.entries(audio?.voiceSpecial?.[charId] || {})) {
+    if (slots && Object.keys(slots).length) out.push({ id: type, label: t(SPECIAL_LABELS[type] || type) });
+  }
+  return out;
+}
 
 export function OperatorVoice({ charId }) {
   const settings = useSettings();
@@ -20,17 +42,19 @@ export function OperatorVoice({ charId }) {
   return html`<label class="lo-voice" data-voice-char=${charId}>
     <span>${t('此干员语音')}</span>
     <span class="lo-select"><select aria-label=${t('此干员语音')} value=${value} onChange=${(e) => change(e.currentTarget.value)}>
-      <option value="">${t('跟随全局')}</option><option value="cn">${VOICE_LANG_NAMES.cn}</option><option value="jp">${VOICE_LANG_NAMES.jp}</option>
+      <option value="">${t('跟随全局')}</option>
+      ${voiceOptions(charId).map((o) => html`<option key=${o.id} value=${o.id}>${o.label}</option>`)}
     </select></span>
-    <small>${t('仅保存在此浏览器，缺失的日语语音会回退到中文。')}</small>
+    <small>${t('仅保存在此浏览器，缺失的语音会回退到中文。')}</small>
   </label>`;
 }
 
-/** The charIds the official voice tables carry in either dub (audio.voice / audio.voiceJp). */
+/** The charIds any voice tree carries (the Chinese base, the jp / en / kr dubs, and the special voices). */
 function voicedCharIds() {
   const a = data.get('assets')?.audio;
   const out = new Set();
-  for (const table of [a?.voice, a?.voiceJp]) for (const id of Object.keys(table || {})) out.add(id);
+  for (const table of [a?.voice, a?.voiceJp, a?.voiceEn, a?.voiceKr]) for (const id of Object.keys(table || {})) out.add(id);
+  for (const [id, types] of Object.entries(a?.voiceSpecial || {})) if (types && Object.keys(types).length) out.add(id);
   return out;
 }
 
@@ -87,7 +111,7 @@ export function OperatorVoiceList({ open, onClose }) {
     <div class="set-row set-row--search">
       <${TextField} size="sm" icon="search" value=${q} placeholder=${t('搜索干员')} class="ov-search" onInput=${setQ} />
     </div>
-    <p class="set-hint">${t('默认语音语言')} · ${VOICE_LANG_NAMES[settings.voiceLang] || settings.voiceLang}
+    <p class="set-hint">${t('默认语音语言')} · ${DUB_NAMES[settings.voiceLang] || settings.voiceLang}
       ${Object.keys(overrides).length ? html` · <${Button} size="sm" variant="ghost" onClick=${resetAll} data-testid="voice-list-reset">${t('全部恢复默认')}<//>` : null}</p>
     <div class="ov-list" data-testid="voice-list">
       ${shown.length === 0 ? html`<p class="set-hint">${t('没有匹配的干员')}</p>` : null}

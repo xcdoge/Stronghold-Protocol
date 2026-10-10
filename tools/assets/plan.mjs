@@ -23,7 +23,7 @@
 
 import { RAW, joinUrl, safeName, urlBase, urlDir } from './sources.mjs';
 import { kindOf } from './formats.mjs';
-import { pickUnitSfx, pickModeAttacks, pickModeHits, skillModeLetter, SLOT_MODE_LETTER, UI_SFX, BATTLE_SFX, resolveSpec, indexVoice, VOICE_DIRS, VOICE_BATTLE_SLOTS } from './audio.mjs';
+import { pickUnitSfx, pickModeAttacks, pickModeHits, skillModeLetter, SLOT_MODE_LETTER, UI_SFX, BATTLE_SFX, resolveSpec, indexVoice, indexVoiceSpecial, VOICE_DIRS, VOICE_CUSTOM_DIR, VOICE_BATTLE_SLOTS } from './audio.mjs';
 import { literal } from './manifest.mjs';
 import { EMOTE_CATALOG } from '../../shared/constants.js';
 
@@ -151,6 +151,23 @@ function voiceAlt(asset, lang) {
   if (!charId || !voiceId || !/^[a-z0-9_]+$/i.test(charId) || !/^[a-z]{2}_\d+$/i.test(voiceId)) return null;
   const file = `${charId}/${voiceId.toLowerCase()}.mp3`;
   return alt(`audio/voice/${lang}/${file}`, joinUrl(RAW.aa2voice, `${VOICE_DIRS[lang]}/${file}`));
+}
+
+/**
+ * One special voice line: the same naming as voiceAlt, but the dump keeps it in `voice_custom/<wordKeyLower>/` and the
+ * client reads `audio/voice/<type>/` (cn_topolect, ita, ger, rus, fre, spa, linkage).
+ */
+function voiceSpecialAlt(asset, type) {
+  // the asset is the dump's folder + voice id ('char_102_texas_ITA/CN_019'): the folder is the operator's word key, so the
+  // operator's own charId is that folder without the '_<type>' suffix — the client's tree is keyed by charId
+  const [folder, voiceId] = String(asset).split('/');
+  if (!folder || !voiceId || !/^[a-z0-9_]+$/i.test(folder) || !/^[a-z]{2}_\d+$/i.test(voiceId)) return null;
+  const suffix = `_${type}`;
+  if (!folder.toLowerCase().endsWith(suffix)) return null;
+  const charId = folder.slice(0, folder.length - suffix.length);
+  if (!charId) return null;
+  const file = `${charId}/${voiceId.toLowerCase()}.mp3`;
+  return alt(`audio/voice/${type}/${file}`, joinUrl(RAW.aa2voice, `${VOICE_CUSTOM_DIR}/${folder.toLowerCase()}/${voiceId.toLowerCase()}.mp3`));
 }
 
 /** Sound path under sound_beta_2 → alternative under public/assets/audio/<sub>. */
@@ -683,13 +700,39 @@ export function buildPlan({ assets07, ops03, enemies05, maps05, audio, modelsDat
   const voice = voiceTree(voiceLang);
   if (!Object.keys(voice).length) notes.push('battle voice: charword_table.json has no slots (index missing?)');
 
+  // The whole English and Korean dubs beside the Chinese and Japanese trees (settings 默认语音语言), the same slots and
+  // file names again — only the dump folder differs (VOICE_DIRS). 0.2.3's per-operator override can name any of them.
+  const voiceEn = voiceTree('en');
+  const voiceKr = voiceTree('kr');
+
+  // The special voices (voice_custom, the official CUSTOM group + 联动): per operator and per type, because only some
+  // operators have one (24 方言, 9 意大利语 …). The client reads audio.voiceSpecial[charId][type][slot], and the operator's
+  // own list of types is what the settings' per-operator picker offers.
+  const voiceSpecial = {};
+  for (const [charId, types] of indexVoiceSpecial(charword, voiceSlots)) {
+    if (!chars[charId]) continue;
+    const rec = {};
+    for (const [type, slots] of Object.entries(types)) {
+      const v = {};
+      for (const [slot, assets] of Object.entries(slots)) {
+        const lines = assets.map((a) => leaf(voiceSpecialAlt(a, type))).filter(Boolean);
+        if (!lines.length) continue;
+        v[slot] = lines.length === 1 ? lines[0] : lines;
+      }
+      if (Object.keys(v).length) rec[type] = v;
+    }
+    if (Object.keys(rec).length) voiceSpecial[charId] = rec;
+  }
+  if (Object.keys(voiceSpecial).length) notes.push(`special voice: ${Object.keys(voiceSpecial).length} operators`);
+
   const template = {
     chars, enemies, tokens, bonds, items, bands, skills, skillsById, modules, ui, prof,
     audio: {
       bgm,
       bossBgm: Object.fromEntries(Object.entries(bossBgm).sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }))),
       voice,
-      ...(voiceJp ? { voiceJp: voiceTree(VOICE_JP_LANG) } : {}),
+      ...(voiceJp ? { voiceJp: voiceTree(VOICE_JP_LANG), voiceEn, voiceKr } : {}),
+      ...(Object.keys(voiceSpecial).length ? { voiceSpecial } : {}),
       sfx: { ui: sfxUi, battle: sfxBattle, units: unitsSfx },
     },
   };
