@@ -405,21 +405,29 @@ export class BoardScene {
       if (/MT_KXMR2/.test(dbg)) groundZ = g.getAttribute('position').array;
       else if (/MT_LMZ_Common2/.test(dbg) && groundZ) {
         const pos = g.getAttribute('position');
-        // One height per plate, taken at the plate's centre: snapping each vertex on its own would tilt the plate to
-        // follow the ground's relief (a corner lifting off). Plates are unshared quads — 4 vertices each.
+        // One height for the whole layer, taken from the field's own floor: the ground mesh also carries crates and
+        // walls, so a per-plate "highest point nearby" picks up a crate top and lifts (or tilts) the plate. Sample a
+        // tight radius per plate, then use the most frequent height — the flat field level.
+        const samples = [];
         for (let i = 0; i < pos.array.length; i += 12) {
           let cx = 0, cy = 0;
           for (let k = 0; k < 4; k++) { cx += pos.array[i + k * 3]; cy += pos.array[i + k * 3 + 1]; }
           cx /= 4; cy /= 4;
           let top = -Infinity;
           for (let j = 0; j < groundZ.length; j += 3) {
-            if (Math.abs(groundZ[j] - cx) < 0.55 && Math.abs(groundZ[j + 1] - cy) < 0.55 && groundZ[j + 2] > top) top = groundZ[j + 2];
+            if (Math.abs(groundZ[j] - cx) < 0.3 && Math.abs(groundZ[j + 1] - cy) < 0.3 && groundZ[j + 2] > top) top = groundZ[j + 2];
           }
-          if (!Number.isFinite(top)) continue;
-          for (let k = 0; k < 4; k++) pos.array[i + k * 3 + 2] = top + 0.015;
+          if (Number.isFinite(top)) samples.push(Math.round(top * 100) / 100);
         }
-        pos.needsUpdate = true;
-        g.computeBoundingSphere();
+        if (samples.length) {
+          const count = new Map();
+          for (const s of samples) count.set(s, (count.get(s) || 0) + 1);
+          let level = 0.3, best = -1;
+          for (const [s, n] of count) if (n > best) { best = n; level = s; }
+          for (let i = 2; i < pos.array.length; i += 3) pos.array[i] = level + 0.015;
+          pos.needsUpdate = true;
+          g.computeBoundingSphere();
+        }
       }
       mesh.castShadow = false; mesh.receiveShadow = false;
       mesh.renderOrder = water ? 1 : mat.userData.blend === 'blend' ? 2 : mat.userData.blend === 'cutout' ? -3 : -4;
