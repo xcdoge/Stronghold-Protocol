@@ -311,15 +311,19 @@ export function loadScenePack(assets, stageId) {
     const mats = isObj(doc.materials) ? doc.materials : {};
     const names = [...new Set(Object.values(mats).map((m) => (isObj(m) && typeof m.map === 'string' ? m.map : null)).filter(Boolean))];
     const pages = Math.max(0, Math.min(16, doc.lightmaps | 0));
-    const [texList, lm] = await Promise.all([
+    const [texList, lm, env] = await Promise.all([
       // Cache-buster: a browser that already holds an older copy of a scene texture would keep showing it (the
       // names are stable), which is exactly how the Kazimierz plates rendered solid white for one user (#549).
       Promise.all(names.map((n) => { const u = url(SCENE_TEX_GROUP, n); return img(u ? u + '?v=' + SCENE_VERSION : u); })),
       Promise.all(Array.from({ length: pages }, (_, i) => img(url(group, `lm${i}`)))),
+      // The scene's own reflection probe (ReflectionProbe-0, exported as an equirectangular page). Optional: an
+      // extraction without it falls back to the procedural environment of previous versions.
+      img(url(group, 'env')),
     ]);
     const tex = {};
     names.forEach((n, i) => { if (texList[i]) tex[n] = texList[i]; });
-    return { key: `${url(group, 'scene')}#${doc.binBytes | 0}`, stage: stageId, doc, chunks, groups: sceneGroupRects(chunks), images: { tex, lm } };
+    return { key: `${url(group, 'scene')}#${doc.binBytes | 0}`, stage: stageId, doc, chunks, groups: sceneGroupRects(chunks),
+      images: { tex, lm, env: env || null } };
   })().catch((err) => { console.warn('[board3d] scene load failed', err); return null; }).then((pack) => {
     if (!pack && sceneCache.get(stageId) === pending) sceneCache.delete(stageId);
     return pack;

@@ -25,7 +25,10 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const TOOL = path.join(ROOT, 'tools/local-extract');
 const ENV = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
-const PY = ['python3', 'python'].find((bin) => spawnSync(bin, ['--version']).status === 0);
+// `python3` first (the CI containers), then a local .cache/npvenv with Pillow+numpy (setup puts it there on Windows,
+// where the CI interpreter is not on PATH); the tests that need Pillow skip without one
+const PY = [process.env.SP_PYTHON, path.join(ROOT, '.cache/npvenv/Scripts/python.exe'), path.join(ROOT, '.cache/npvenv/bin/python'),
+  'python3', 'python'].filter(Boolean).find((bin) => spawnSync(bin, ['--version']).status === 0);
 const HAS_PIL = !!PY && spawnSync(PY, ['-c', 'import PIL'], { env: ENV }).status === 0;
 const stages = JSON.parse(readFileSync(path.join(ROOT, 'data/stages.json'), 'utf8'));
 const manifest = (() => { try { return JSON.parse(readFileSync(path.join(ROOT, 'data/local-assets.json'), 'utf8')); } catch { return null; } })();
@@ -193,6 +196,52 @@ print(json.dumps({'mode': d.mode, 'px': list(d.getdata()), 'range': s.LIGHT_RANG
     assert.equal(out.dat, 'scenes_a_level_x_level_x.dat');
     assert.equal(out.hash, 'avg_a__1.dat');
     assert.equal(out.wanted.length, 2, 'the scene and its lighting data, nothing else');
+  });
+
+  test('_face_uv / probe_rows: the stored faces hold Unity world +X,−X,+Y,−Y,+Z,−Z with bottom-up images (#549)', () => {
+    const out = py(`print(json.dumps({
+  'axes': [s._face_uv(0, v) for v in [(1,0,0), (-1,0,0), (0,1,0), (0,-1,0), (0,0,1), (0,0,-1)]],
+  'edge': s._face_uv(0, (0.70710678, 0.70710678, 0)),
+  'up': [list(u) for u in s.FACE_UP],
+  'rows': [s.probe_rows((128, 128), 0, 0.0, 1.0), s.probe_rows((128, 128), 0, 0.0, -1.0), s.probe_rows((128, 128), 0, 0.0, 0.0),
+           s.probe_rows((128, 128), 0, 1.0, 0.0), s.probe_rows((128, 128), 0, -1.0, 0.0)]}))`);
+    // a probe baked with no local rotation: Unity world +X is the first stored face, and every axis direction samples
+    // the centre of its own face at u = v = 0
+    assert.deepEqual(out.axes, [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0]]);
+    // a direction on the shared edge of +X and +Y lands on the lower face, at its v = +1 edge
+    assert.deepEqual(out.edge, [0, 0, 1]);
+    assert.deepEqual(out.up[4], [0, 1, 0], 'the +Z face s up is +Y');
+    assert.deepEqual(out.up[0], [0, 1, 0], 'a side face s up is +Y');
+    // the images are stored bottom-up, so v = +1 is the LAST row and v = −1 the first (this is the row order that
+    // makes the page agree with the faces Unity samples; a top-down read mirrors the whole panorama vertically)
+    assert.deepEqual(out.rows, [[64, 127], [64, 0], [64, 64], [127, 64], [0, 64]]);
+  });
+
+  test('cubemap_equirect: sky at row 0 (board +z), ground at the last row, column 0 = board +x, +y to the right (#549)', { skip: !HAS_PIL && 'no Pillow' }, () => {
+    const out = py(`from PIL import Image
+faces = []
+for k in range(6):
+    im = Image.new('RGB', (8, 8), (k * 40, 0, 0))
+    im.putpixel((4, 6), (7, 8, 9))       # near the centre of the face, toward its v = +1 (last) row
+    im.putpixel((4, 1), (11, 12, 13))    # … and toward v = −1 (first row)
+    faces.append(im)
+page = s.cubemap_equirect(faces, 16, 8)
+print(json.dumps({'size': list(page.size),
+  'zenith': page.getpixel((0, 0)), 'nadir': page.getpixel((0, 7)),
+  'x': page.getpixel((0, 4)), 'y': page.getpixel((4, 4)), 'nx': page.getpixel((8, 4)), 'ny': page.getpixel((12, 4)),
+  'markerPlus': page.getpixel((12, 1)), 'markerMinus': page.getpixel((3, 1)), 'corner': page.getpixel((0, 2))}))`);
+    assert.deepEqual(out.size, [16, 8], '2:1 — the size cubemap_equirect insists on');
+    assert.deepEqual(out.zenith, [200, 0, 0], 'row 0 is board +z: the stored −Z face (index 5 → 200)');
+    assert.deepEqual(out.nadir, [160, 0, 0], 'the last row is board −z: the stored +Z face (index 4 → 160)');
+    assert.deepEqual(out.x, [0, 0, 0], 'the equator at column 0 is board +x: the stored +X face (index 0)');
+    assert.deepEqual(out.y, [80, 0, 0], 'a quarter turn toward +x→+y is board +y (index 2)');
+    assert.deepEqual(out.nx, [40, 0, 0], 'half a turn is board −x (index 1)');
+    assert.deepEqual(out.ny, [120, 0, 0], 'three quarters is board −y (index 3)');
+    // the row next to the pole also grazes the four side faces just off -X and −Y …; which of their two marker texels
+    // it reads is what pins the row order down: v = +1 must be the LAST image row (a top-down read would swap them)
+    assert.deepEqual(out.markerPlus, [11, 12, 13], 'the v = +1 marker (the −Y face s last row) 1/8 of the way down');
+    assert.deepEqual(out.markerMinus, [7, 8, 9], '… and its v = −1 marker (row 0) at the same height');
+    assert.deepEqual(out.corner, [0, 0, 0], 'a pole-adjacent pixel is still filled (this cell is the +X face)');
   });
 });
 
@@ -510,4 +559,19 @@ describe('extracted scenes (when scene bundles were extracted here)', { skip: !O
       board.destroy();
     }
   });
+
+  for (const g of Object.keys(groups).filter((k) => k.startsWith('scene/act'))) {
+    test(`${g}: the reflection probe is a 2:1 equirectangular page the manifest lists (#549)`, { skip: !groups[g].env && 'this extraction has no probe' }, () => {
+      const e = groups[g].env;
+      assert.equal(e.kind, 'EnvEquirect');
+      assert.match(e.path, new RegExp(`^/assets/local/${g}/env\\.(png|webp)$`));
+      const file = path.join(ROOT, 'public', e.path.replace(/^\//, ''));
+      assert.ok(existsSync(file), `${e.path} is on disk`);
+      // the listed size must be the real one, and 2:1 so three.js reads every row as one latitude
+      assert.equal(e.w, e.h * 2, `${g}: equirect is 2:1`);
+      const head = readFileSync(file).subarray(0, 26);
+      assert.equal(head.readUInt32BE(16), e.w, `${g}: PNG width`);
+      assert.equal(head.readUInt32BE(20), e.h, `${g}: PNG height`);
+    });
+  }
 });
