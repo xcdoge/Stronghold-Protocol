@@ -405,13 +405,18 @@ export class BoardScene {
       if (/MT_KXMR2/.test(dbg)) groundZ = g.getAttribute('position').array;
       else if (/MT_LMZ_Common2/.test(dbg) && groundZ) {
         const pos = g.getAttribute('position');
-        for (let i = 0; i < pos.array.length; i += 3) {
-          const x = pos.array[i], y = pos.array[i + 1];
+        // One height per plate, taken at the plate's centre: snapping each vertex on its own would tilt the plate to
+        // follow the ground's relief (a corner lifting off). Plates are unshared quads — 4 vertices each.
+        for (let i = 0; i < pos.array.length; i += 12) {
+          let cx = 0, cy = 0;
+          for (let k = 0; k < 4; k++) { cx += pos.array[i + k * 3]; cy += pos.array[i + k * 3 + 1]; }
+          cx /= 4; cy /= 4;
           let top = -Infinity;
           for (let j = 0; j < groundZ.length; j += 3) {
-            if (Math.abs(groundZ[j] - x) < 0.55 && Math.abs(groundZ[j + 1] - y) < 0.55 && groundZ[j + 2] > top) top = groundZ[j + 2];
+            if (Math.abs(groundZ[j] - cx) < 0.55 && Math.abs(groundZ[j + 1] - cy) < 0.55 && groundZ[j + 2] > top) top = groundZ[j + 2];
           }
-          if (Number.isFinite(top)) pos.array[i + 2] = top + 0.015;
+          if (!Number.isFinite(top)) continue;
+          for (let k = 0; k < 4; k++) pos.array[i + k * 3 + 2] = top + 0.015;
         }
         pos.needsUpdate = true;
         g.computeBoundingSphere();
