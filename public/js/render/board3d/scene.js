@@ -371,6 +371,7 @@ export class BoardScene {
       bucket.chunks.push(c);
     }
     let n = 0;
+    let groundZ = null;
     for (const [mk, bucket] of buckets) {
       const c = mergeSceneChunks(bucket.chunks);
       const info = bucket.info;
@@ -396,10 +397,25 @@ export class BoardScene {
       g.setIndex(new T.BufferAttribute(c.index, 1));
       g.computeBoundingSphere();
       const mesh = new T.Mesh(g, mat);
-      // The framed plates (MT_LMZ_Common2 = TX_LMZ_common's top-left cell) sit at z=-0.02 under the ground
-      // (z up to 3.21) and under MT_LMZ_N2 (z 0.32): they are decals, so lift them above both. This must happen
-      // BEFORE updateMatrix() — matrixAutoUpdate is false, so a later position change is ignored.
-      if (mat.userData && /MT_LMZ_Common2/.test(mat.userData.dbg || '')) mesh.position.z += 0.36;
+      const dbg = (mat.userData && mat.userData.dbg) || '';
+      // The scene's ground is not a flat plane (measured 0.30 / 0.63 / 2.25 … beneath different decal plates), so the
+      // framed plates (MT_LMZ_Common2 = TX_LMZ_common's top-left cell, authored at z=-0.02) are snapped onto the
+      // ground directly under each of their vertices. A single constant lift always leaves some plates floating over
+      // the low parts and others buried under the high ones (#549). The ground bucket is built before the plates.
+      if (/MT_KXMR2/.test(dbg)) groundZ = g.getAttribute('position').array;
+      else if (/MT_LMZ_Common2/.test(dbg) && groundZ) {
+        const pos = g.getAttribute('position');
+        for (let i = 0; i < pos.array.length; i += 3) {
+          const x = pos.array[i], y = pos.array[i + 1];
+          let top = -Infinity;
+          for (let j = 0; j < groundZ.length; j += 3) {
+            if (Math.abs(groundZ[j] - x) < 0.55 && Math.abs(groundZ[j + 1] - y) < 0.55 && groundZ[j + 2] > top) top = groundZ[j + 2];
+          }
+          if (Number.isFinite(top)) pos.array[i + 2] = top + 0.015;
+        }
+        pos.needsUpdate = true;
+        g.computeBoundingSphere();
+      }
       mesh.castShadow = false; mesh.receiveShadow = false;
       mesh.renderOrder = water ? 1 : mat.userData.blend === 'blend' ? 2 : mat.userData.blend === 'cutout' ? -3 : -4;
       mesh.matrixAutoUpdate = false; mesh.updateMatrix();
