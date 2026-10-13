@@ -15,7 +15,7 @@ export const GLYPH = Object.freeze({
   X: { mat: 'sep', h: 'sep' },
   r: { mat: 'road', h: null },
   R: { mat: 'roadN', h: null },
-  f: { mat: 'floor', h: null },
+  f: { mat: 'sealed', h: null },   // 不可部署地面 = TX_autochessi_common_D 左上那格（与 3D 一致）
   p: { mat: 'preview', h: null },
   h: { mat: 'wall', h: 'wall' },
   b: { mat: 'fence', h: null },

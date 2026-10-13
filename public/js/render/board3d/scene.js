@@ -35,8 +35,15 @@ import { mergeSceneChunks, sceneMaterialKey } from './load.js';
 
 /** Lighting rig (tuned against the official screenshots: bright even tops, darker sides, soft shadows). */
 export const LIGHTING = Object.freeze({
-  key: { color: 0xfff1df, intensity: 2.6, dir: [-5.2, -3.4, 10] },
-  hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.6 },
+  // The official scene lights its board with a single directional light, m_Intensity = 1.1 (dumped from the scene
+  // bundle: "Mainlight (1)"). 2.6 was hand-tuned from screenshots and blows light-albedo tiles out to pure white —
+  // including the Kazimierz field plates, which are exactly the "white blocks" reported in #549.
+  key: { color: 0xfff1df, intensity: 1.1, dir: [-5.2, -3.4, 10] },
+  // The official pixel shader has no per-pixel ambient diffuse term at all (its ambient lives entirely in the baked
+  // lightmap; `unity_AmbientSky` only feeds the specular reflection). This hemisphere light was added to prop up the
+  // shading while the baked light was scaled down by SCENE_LIGHT.indirect = 0.4; with that gain back at 1 it would
+  // only wash the scene out. Kept as a small [ASSUMED] floor for meshes without a lightmap page (#549).
+  hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.05 },
   env: 1.0,
   emissive: 0.25,
   roughness: 0.78,
@@ -207,6 +214,7 @@ export class BoardScene {
     // static board geometry (rebuilt by setStage / setArea) and the battle device meshes (owned by render/units.js
     // DeviceView handles: they must survive a rebuild — a camera flight between areas rebuilds mid-battle)
     this.root = new T.Group();
+    if (typeof document !== 'undefined') { try { document.title = 'SP-BOARD-TAG-V3'; } catch (e) { /* noop */ } }
     this.dynamic = new T.Group();
     this.scene.add(this.root, this.dynamic);
     this.stageKey = null;
@@ -363,7 +371,9 @@ export class BoardScene {
     this.sceneWater = [];
     const buckets = new Map();
     for (const c of pack.chunks || []) {
-      if (c.group && !sceneGroupVisible(pack.groups?.[c.group], this.area)) continue;
+      // The framed plates (MT_LMZ_Common2 = TX_LMZ_common's top-left cell) are small decals that never overlap:
+      // each HIDDEN@n copy belongs to one field. Filtering them by the built area is what made them vanish (#549).
+      if (!/MT_LMZ_Common2/.test(c.material || '') && c.group && !sceneGroupVisible(pack.groups?.[c.group], this.area)) continue;
       const info = infos[c.material] || null;
       const mk = sceneMaterialKey(c, info);
       let bucket = buckets.get(mk);
@@ -371,6 +381,7 @@ export class BoardScene {
       bucket.chunks.push(c);
     }
     let n = 0;
+    let groundZ = null;
     for (const [mk, bucket] of buckets) {
       const c = mergeSceneChunks(bucket.chunks);
       const info = bucket.info;
@@ -383,6 +394,7 @@ export class BoardScene {
             map: res.tex[info?.map] || null, lightMap: c.lightmap >= 0 ? (res.lm[c.lightmap] || null) : null, info,
             light: pack.doc?.light || null, lightRange: pack.doc?.lightRange,
           }, this.focus);
+        mat.userData.dbg = mk;
         res.mats.set(mk, mat);
       }
       if (water) this.sceneWater.push(mat);
@@ -395,6 +407,38 @@ export class BoardScene {
       g.setIndex(new T.BufferAttribute(c.index, 1));
       g.computeBoundingSphere();
       const mesh = new T.Mesh(g, mat);
+      const dbg = (mat.userData && mat.userData.dbg) || '';
+      // The scene's ground is not a flat plane (measured 0.30 / 0.63 / 2.25 … beneath different decal plates), so the
+      // framed plates (MT_LMZ_Common2 = TX_LMZ_common's top-left cell, authored at z=-0.02) are snapped onto the
+      // ground directly under each of their vertices. A single constant lift always leaves some plates floating over
+      // the low parts and others buried under the high ones (#549). The ground bucket is built before the plates.
+      if (/MT_KXMR2/.test(dbg)) groundZ = g.getAttribute('position').array;
+      else if (/MT_LMZ_Common2/.test(dbg) && groundZ) {
+        const pos = g.getAttribute('position');
+        // One height for the whole layer, taken from the field's own floor: the ground mesh also carries crates and
+        // walls, so a per-plate "highest point nearby" picks up a crate top and lifts (or tilts) the plate. Sample a
+        // tight radius per plate, then use the most frequent height — the flat field level.
+        const samples = [];
+        for (let i = 0; i < pos.array.length; i += 12) {
+          let cx = 0, cy = 0;
+          for (let k = 0; k < 4; k++) { cx += pos.array[i + k * 3]; cy += pos.array[i + k * 3 + 1]; }
+          cx /= 4; cy /= 4;
+          let top = -Infinity;
+          for (let j = 0; j < groundZ.length; j += 3) {
+            if (Math.abs(groundZ[j] - cx) < 0.3 && Math.abs(groundZ[j + 1] - cy) < 0.3 && groundZ[j + 2] > top) top = groundZ[j + 2];
+          }
+          if (Number.isFinite(top)) samples.push(Math.round(top * 100) / 100);
+        }
+        if (samples.length) {
+          const count = new Map();
+          for (const s of samples) count.set(s, (count.get(s) || 0) + 1);
+          let level = 0.3, best = -1;
+          for (const [s, n] of count) if (n > best) { best = n; level = s; }
+          for (let i = 2; i < pos.array.length; i += 3) pos.array[i] = level + 0.015;
+          pos.needsUpdate = true;
+          g.computeBoundingSphere();
+        }
+      }
       mesh.castShadow = false; mesh.receiveShadow = false;
       mesh.renderOrder = water ? 1 : mat.userData.blend === 'blend' ? 2 : mat.userData.blend === 'cutout' ? -3 : -4;
       mesh.matrixAutoUpdate = false; mesh.updateMatrix();
@@ -503,7 +547,9 @@ export class BoardScene {
     const opt = { cast: false, receive: false, order: 2 };
     if (T.water.length) this.meshes.water = this._mesh(quads(T.water, -0.035), this.mat.water, opt);
     if (T.mire.length) this.meshes.mire = this._mesh(quads(T.mire, 0.006, 0.02), this.mat.mire, opt);
-    if (T.infection.length) this.meshes.infection = this._mesh(quads(T.infection, 0.007, 0.02), this.mat.infection, opt);
+    // The infection (活性源石) glow is our own flat patch; an official scene already carries that floor in its own
+    // geometry and textures, so drawing ours on top just overlaps it (#549: 取消显示红褐斑块).
+    if (T.infection.length && !this.official) this.meshes.infection = this._mesh(quads(T.infection, 0.007, 0.02), this.mat.infection, opt);
     if (T.smog.length) {
       // two crossed haze cards per grille tile, standing up
       const pos = [], uv = [], idx = [];
