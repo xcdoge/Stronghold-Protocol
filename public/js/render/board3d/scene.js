@@ -209,6 +209,7 @@ export class BoardScene {
     // static board geometry (rebuilt by setStage / setArea) and the battle device meshes (owned by render/units.js
     // DeviceView handles: they must survive a rebuild — a camera flight between areas rebuilds mid-battle)
     this.root = new T.Group();
+    if (typeof document !== 'undefined') { try { document.title = 'SP-BOARD-TAG-V3'; } catch (e) { /* noop */ } }
     this.dynamic = new T.Group();
     this.scene.add(this.root, this.dynamic);
     this.stageKey = null;
@@ -360,7 +361,9 @@ export class BoardScene {
     this.sceneWater = [];
     const buckets = new Map();
     for (const c of pack.chunks || []) {
-      if (c.group && !sceneGroupVisible(pack.groups?.[c.group], this.area)) continue;
+      // The framed plates (MT_LMZ_Common2 = TX_LMZ_common's top-left cell) are small decals that never overlap:
+      // each HIDDEN@n copy belongs to one field. Filtering them by the built area is what made them vanish (#549).
+      if (!/MT_LMZ_Common2/.test(c.material || '') && c.group && !sceneGroupVisible(pack.groups?.[c.group], this.area)) continue;
       const info = infos[c.material] || null;
       const mk = sceneMaterialKey(c, info);
       let bucket = buckets.get(mk);
