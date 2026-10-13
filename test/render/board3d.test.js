@@ -154,8 +154,10 @@ describe('board geometry (layout.js)', () => {
         }
         assert.ok(tops > 100, `${id} tops`);
         const G = b.grid;
+        // The gates come from the whole grid, not only the drawn tiles: the S (enemy) and E (objective) gates sit in
+        // the other half most of the time, and the red gate has to stay visible when the camera looks there (#549).
         const expected = [];
-        for (const row of G) for (const t of row) if (t.drawn && (t.glyph === 'S' || t.glyph === 'E')) expected.push(`${t.r},${t.c}`);
+        for (const row of G) for (const t of row) if (t.glyph === 'S' || t.glyph === 'E') expected.push(`${t.r},${t.c}`);
         assert.deepEqual(b.gates.map((x) => `${x.r},${x.c}`).sort(), expected.sort(), `${id} gates`);
         const fenced = G.flat().some((t) => t.drawn && t.glyph === 'b');
         assert.equal(b.buckets.pipe.vertexCount > 0, fenced, `${id} railings iff fenced tiles`);

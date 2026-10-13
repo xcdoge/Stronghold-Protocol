@@ -322,6 +322,14 @@ export function buildBoard(stage, opts = {}) {
   const topZ = (t) => (t.glyph === 'd' ? -BASIN : t.h);
   const board = new Geom(), decal = new Geom(), pipe = new Geom(), glass = new Geom();
   const gates = [], terrain = { water: [], mire: [], smog: [], infection: [] };
+  // The S (enemy entry) and E (objective) gates mark areas that are outside the built area most of the time — the
+  // enemy's start gate sits in the opposite half. Collect them from the whole grid, not only from the drawn tiles,
+  // or the red gate disappears exactly when the camera looks at the other field (#549).
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const g = grid[r][c];
+    if (g.glyph === 'S') gates.push({ r, c, kind: 'start', z: 0 });
+    else if (g.glyph === 'E') gates.push({ r, c, kind: 'end', z: 0 });
+  }
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
 
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
@@ -365,8 +373,6 @@ export function buildBoard(stage, opts = {}) {
     }
     // per-glyph extras
     switch (t.glyph) {
-      case 'S': gates.push({ r, c, kind: 'start', z: 0 }); break;
-      case 'E': gates.push({ r, c, kind: 'end', z: 0 }); break;
       case 'I': case 'O': {
         const surf = UVT[t.glyph === 'I' ? 'arrowDown' : 'arrowUp'];
         if (surf) {
