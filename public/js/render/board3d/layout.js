@@ -322,10 +322,15 @@ export function buildBoard(stage, opts = {}) {
   const topZ = (t) => (t.glyph === 'd' ? -BASIN : t.h);
   const board = new Geom(), decal = new Geom(), pipe = new Geom(), glass = new Geom();
   const gates = [], terrain = { water: [], mire: [], smog: [], infection: [] };
-  // The S (enemy entry) and E (objective) gates mark areas that are outside the built area most of the time — the
-  // enemy's start gate sits in the opposite half. Collect them from the whole grid, not only from the drawn tiles,
-  // or the red gate disappears exactly when the camera looks at the other field (#549).
+  // The S (enemy entry, red box) and E (objective, blue box) gates mark areas that are outside the built area most of
+  // the time — the enemy's start gate sits in the opposite half. Collect them from the whole grid, not only from the
+  // drawn tiles, or the red gate disappears exactly when the camera looks at the other field (#549).
+  // Exception: on the Final Assault (boss) field only that field's own gates are drawn — the ones of the other parts
+  // would hang over the arena's own gate (player: 打 boss 时取消渲染上面的红门蓝门，boss 场地蓝门保留).
+  const bossField = Array.isArray(opts.area) && opts.area.length === 1 && opts.area[0].r1 <= 6;
+  const inArea = (r, c) => !bossField || (opts.area || []).some((a) => r >= a.r0 && r <= a.r1 && c >= a.c0 && c <= a.c1);
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (!inArea(r, c)) continue;
     const g = grid[r][c];
     if (g.glyph === 'S') gates.push({ r, c, kind: 'start', z: 0 });
     else if (g.glyph === 'E') gates.push({ r, c, kind: 'end', z: 0 });
