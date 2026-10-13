@@ -377,6 +377,7 @@ export class BoardScene {
             map: res.tex[info?.map] || null, lightMap: c.lightmap >= 0 ? (res.lm[c.lightmap] || null) : null, info,
             light: pack.doc?.light || null, lightRange: pack.doc?.lightRange,
           }, this.focus);
+        mat.userData.dbg = mk;
         res.mats.set(mk, mat);
       }
       if (water) this.sceneWater.push(mat);
@@ -389,6 +390,10 @@ export class BoardScene {
       g.setIndex(new T.BufferAttribute(c.index, 1));
       g.computeBoundingSphere();
       const mesh = new T.Mesh(g, mat);
+      // The framed plates (MT_LMZ_Common2 = TX_LMZ_common's top-left cell) sit at z=-0.02 under the ground
+      // (z up to 3.21) and under MT_LMZ_N2 (z 0.32): they are decals, so lift them above both. This must happen
+      // BEFORE updateMatrix() — matrixAutoUpdate is false, so a later position change is ignored.
+      if (mat.userData && /MT_LMZ_Common2/.test(mat.userData.dbg || '')) mesh.position.z += 0.6;
       mesh.castShadow = false; mesh.receiveShadow = false;
       mesh.renderOrder = water ? 1 : mat.userData.blend === 'blend' ? 2 : mat.userData.blend === 'cutout' ? -3 : -4;
       mesh.matrixAutoUpdate = false; mesh.updateMatrix();
