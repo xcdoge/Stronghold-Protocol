@@ -280,7 +280,9 @@ describe('scene chunks (load.js)', () => {
       assert.equal(await loadScenePack(store, 'act2autochess_m01'), null, 'not extracted');
       const pack = await loadScenePack(store, 'act2autochess_m02');
       assert.equal(pack.chunks.length, PARTS.length);
-      assert.deepEqual(seen.sort(), ['/s/lm0.webp', '/t/TX_A.webp']);
+      // Scene texture URLs carry ?v=SCENE_VERSION: the names are stable, so a client holding an older copy of a
+      // texture would keep rendering it (that is how the Kazimierz plates showed up as solid white in #549).
+      assert.deepEqual(seen.sort(), ['/s/lm0.webp', '/t/TX_A.webp?v=1']);
       assert.ok(pack.images.tex.TX_A && pack.images.lm[0]);
       assert.deepEqual(Object.keys(pack.groups).sort(), ['HIDDEN@1', 'HIDDEN@2', 'HIDDEN@3']);
       assert.equal(await loadScenePack(store, 'act2autochess_m02'), pack, 'cached');
