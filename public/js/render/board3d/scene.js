@@ -34,7 +34,10 @@ import { mergeSceneChunks, sceneMaterialKey } from './load.js';
 
 /** Lighting rig (tuned against the official screenshots: bright even tops, darker sides, soft shadows). */
 export const LIGHTING = Object.freeze({
-  key: { color: 0xfff1df, intensity: 2.6, dir: [-5.2, -3.4, 10] },
+  // The official scene lights its board with a single directional light, m_Intensity = 1.1 (dumped from the scene
+  // bundle: "Mainlight (1)"). 2.6 was hand-tuned from screenshots and blows light-albedo tiles out to pure white —
+  // including the Kazimierz field plates, which are exactly the "white blocks" reported in #549.
+  key: { color: 0xfff1df, intensity: 1.1, dir: [-5.2, -3.4, 10] },
   hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.6 },
   env: 1.0,
   emissive: 0.25,
