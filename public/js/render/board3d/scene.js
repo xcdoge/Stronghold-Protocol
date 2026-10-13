@@ -38,7 +38,11 @@ export const LIGHTING = Object.freeze({
   // bundle: "Mainlight (1)"). 2.6 was hand-tuned from screenshots and blows light-albedo tiles out to pure white —
   // including the Kazimierz field plates, which are exactly the "white blocks" reported in #549.
   key: { color: 0xfff1df, intensity: 1.1, dir: [-5.2, -3.4, 10] },
-  hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.6 },
+  // The official pixel shader has no per-pixel ambient diffuse term at all (its ambient lives entirely in the baked
+  // lightmap; `unity_AmbientSky` only feeds the specular reflection). This hemisphere light was added to prop up the
+  // shading while the baked light was scaled down by SCENE_LIGHT.indirect = 0.4; with that gain back at 1 it would
+  // only wash the scene out. Kept as a small [ASSUMED] floor for meshes without a lightmap page (#549).
+  hemi: { sky: 0xe4ecf4, ground: 0x4a5058, intensity: 0.05 },
   env: 1.0,
   emissive: 0.25,
   roughness: 0.78,
